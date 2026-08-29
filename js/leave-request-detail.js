@@ -1,24 +1,41 @@
 // ─────────────────────────────────────────────────────────────
 // js/leave-request-detail.js — หน้าที่ 3 รายละเอียดใบลา
-// สัปดาห์ที่ 6 (ต้นสัปดาห์): อ่านจากข้อมูลปลอม และเปลี่ยนสถานะในหน่วยความจำ
+// สัปดาห์ที่ 6: อ่านใบลาและความเห็นจริงจาก Firestore
+// การกดอนุมัติ/ไม่อนุมัติ และเขียนความเห็น ยังเปลี่ยนแค่ในหน่วยความจำ
+// (บันทึกกลับลง Firestore จริงเป็นงานของสัปดาห์ที่ 7)
 // ─────────────────────────────────────────────────────────────
+import { db } from "./firebase-init.js";
+import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-(function () {
+(async function () {
   var รหัสใบลา = ค่าจากURL("id");
   var กล่องใบลา = document.getElementById("กล่องใบลา");
   var กล่องความเห็น = document.getElementById("กล่องความเห็น");
 
-  // หาใบลาจากข้อมูลปลอม บวกกับใบที่เพิ่งยื่นในหน้าที่ 2
-  var ใบลาที่ยื่นใหม่ = JSON.parse(sessionStorage.getItem("ใบลาที่ยื่นใหม่") || "[]");
-  var ใบ = window.LEAVE_DATA.leaveRequests.concat(ใบลาที่ยื่นใหม่)
-    .find(function (x) { return x.id === รหัสใบลา; });
+  var ใบ, ความเห็น;
+  try {
+    var เอกสารใบลา = await getDoc(doc(db, "leaveRequests", รหัสใบลา));
+    if (เอกสารใบลา.exists()) {
+      ใบ = Object.assign({ id: เอกสารใบลา.id }, เอกสารใบลา.data());
+      var สแนปช็อตความเห็น = await getDocs(collection(db, "leaveRequests", รหัสใบลา, "approvals"));
+      ความเห็น = สแนปช็อตความเห็น.docs.map(function (d) {
+        return Object.assign({ id: d.id }, d.data());
+      });
+    } else {
+      // ไม่พบใน Firestore — อาจเป็นใบที่เพิ่งยื่นในหน้าก่อน ยังไม่บันทึกจริงจนกว่าจะถึงสัปดาห์ที่ 7
+      var ใบลาที่ยื่นใหม่ = JSON.parse(sessionStorage.getItem("ใบลาที่ยื่นใหม่") || "[]");
+      ใบ = ใบลาที่ยื่นใหม่.find(function (x) { return x.id === รหัสใบลา; });
+      ความเห็น = [];
+    }
+  } catch (err) {
+    กล่องใบลา.innerHTML = "<p>⚠️ โหลดข้อมูลจาก Firestore ไม่สำเร็จ: " + esc(err.message) + "</p>";
+    return;
+  }
 
   if (!ใบ) {
     กล่องใบลา.innerHTML = "<p>ไม่พบใบขอลาที่ต้องการ — อาจถูกลบไปแล้ว หรือลิงก์ไม่ถูกต้อง</p>";
     return;
   }
-
-  var ความเห็น = window.LEAVE_DATA.approvals.filter(function (c) { return c.requestId === ใบ.id; });
 
   วาดใบลา();
   วาดความเห็น();

@@ -35,6 +35,8 @@ import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/
   แสดงตาราง(ใบลาทั้งหมด);
 
   function แสดงตาราง(รายการ) {
+    document.getElementById("จำนวนทั้งหมด").textContent = "ทั้งหมด " + รายการ.length + " ใบ";
+
     if (รายการ.length === 0) {
       กล่อง.innerHTML = "<p>ยังไม่มีใบขอลาในระบบ</p>";
       return;
