@@ -1,13 +1,25 @@
 // ─────────────────────────────────────────────────────────────
 // js/leave-types.js — หน้าที่ 4 จัดการประเภทการลา
-// สัปดาห์ที่ 6 (ต้นสัปดาห์): เพิ่ม แก้ ลบ ในหน่วยความจำเท่านั้น
+// สัปดาห์ที่ 7: เพิ่ม แก้ ลบ ลง Firestore จริง (collection leaveTypes)
 // ─────────────────────────────────────────────────────────────
+import { db } from "./firebase-init.js";
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-(function () {
-  var รายการ = window.LEAVE_DATA.leaveTypes.slice();   // ทำสำเนาไว้แก้
+(async function () {
   var ที่วางตาราง = document.getElementById("ตารางประเภท");
   var ช่องชื่อใหม่ = document.getElementById("ชื่อประเภทใหม่");
   var กล่องเตือน = document.getElementById("เตือนประเภท");
+
+  var รายการ = [];
+  try {
+    var สแนปช็อต = await getDocs(collection(db, "leaveTypes"));
+    รายการ = สแนปช็อต.docs.map(function (d) {
+      return Object.assign({ id: d.id }, d.data());
+    });
+  } catch (err) {
+    ที่วางตาราง.innerHTML = "<p>⚠️ โหลดข้อมูลจาก Firestore ไม่สำเร็จ: " + esc(err.message) + "</p>";
+    return;
+  }
 
   วาดตาราง();
   document.getElementById("ปุ่มเพิ่ม").addEventListener("click", เพิ่มประเภท);
@@ -37,7 +49,7 @@
     });
   }
 
-  function เพิ่มประเภท() {
+  async function เพิ่มประเภท() {
     var ชื่อ = ช่องชื่อใหม่.value.trim();
     if (!ชื่อ) {
       กล่องเตือน.textContent = "⚠️ พิมพ์ชื่อประเภทการลาก่อน จึงจะเพิ่มได้";
@@ -45,24 +57,48 @@
       return;
     }
     กล่องเตือน.classList.add("hidden");
-    รายการ.push({ id: "lt-ใหม่-" + Date.now(), name: ชื่อ });
-    ช่องชื่อใหม่.value = "";
-    วาดตาราง();
+
+    var ปุ่มเพิ่ม = document.getElementById("ปุ่มเพิ่ม");
+    ปุ่มเพิ่ม.disabled = true;
+    try {
+      var เอกสารใหม่ = await addDoc(collection(db, "leaveTypes"), { name: ชื่อ });
+      รายการ.push({ id: เอกสารใหม่.id, name: ชื่อ });
+      ช่องชื่อใหม่.value = "";
+      วาดตาราง();
+    } catch (err) {
+      กล่องเตือน.textContent = "⚠️ เพิ่มลง Firestore ไม่สำเร็จ: " + err.message;
+      กล่องเตือน.classList.remove("hidden");
+    } finally {
+      ปุ่มเพิ่ม.disabled = false;
+    }
   }
 
-  function แก้ประเภท(id) {
+  async function แก้ประเภท(id) {
     var ประเภท = รายการ.find(function (t) { return t.id === id; });
     var ชื่อใหม่ = prompt("แก้ชื่อประเภทการลา", ประเภท.name);
     if (ชื่อใหม่ === null) return;              // กดยกเลิก
     if (!ชื่อใหม่.trim()) { alert("ชื่อประเภทการลาว่างเปล่าไม่ได้"); return; }
-    ประเภท.name = ชื่อใหม่.trim();
-    วาดตาราง();
+    ชื่อใหม่ = ชื่อใหม่.trim();
+
+    try {
+      await updateDoc(doc(db, "leaveTypes", id), { name: ชื่อใหม่ });
+      ประเภท.name = ชื่อใหม่;
+      วาดตาราง();
+    } catch (err) {
+      alert("แก้ไขลง Firestore ไม่สำเร็จ: " + err.message);
+    }
   }
 
-  function ลบประเภท(id) {
+  async function ลบประเภท(id) {
     var ประเภท = รายการ.find(function (t) { return t.id === id; });
     if (!confirm('ยืนยันการลบประเภท "' + ประเภท.name + '" หรือไม่')) return;
-    รายการ = รายการ.filter(function (t) { return t.id !== id; });
-    วาดตาราง();
+
+    try {
+      await deleteDoc(doc(db, "leaveTypes", id));
+      รายการ = รายการ.filter(function (t) { return t.id !== id; });
+      วาดตาราง();
+    } catch (err) {
+      alert("ลบออกจาก Firestore ไม่สำเร็จ: " + err.message);
+    }
   }
 })();

@@ -23,6 +23,13 @@ Pages that talk to Firestore load their script as `<script type="module">` (see 
 
 ### Firestore layout
 
+There are exactly 4 collections/subcollections in this project — no others exist, don't invent new ones without checking `leaveeasy-spec.md` §7 first:
+
+- `users/{id}`
+- `leaveTypes/{id}`
+- `leaveRequests/{id}`
+- `leaveRequests/{id}/approvals/{id}` (subcollection, nested per request — not a top-level collection)
+
 ```
 users/{id}                 { name, email, role }        role ∈ employee | manager | hr
 leaveTypes/{id}             { name }
@@ -51,4 +58,8 @@ Firestore has no JOIN, so `*Name` fields are intentionally denormalized copies o
 
 The `firebaseConfig` in `js/firebase-init.js` (including `apiKey`) is a Firebase **Web SDK client config**, not a secret — it is meant to be public and is expected to be committed and pushed. Access control comes from Firestore Security Rules, not from hiding this config.
 
-That said, **never commit real secrets to any file that gets pushed** — e.g. the OpenRouter API key that week 8 introduces for the AI assistant feature belongs in something outside the pushed tree (local-only config, environment variable, etc.), never hardcoded into a JS file.
+**Rule: never write a real secret key into any file that gets pushed to GitHub** — e.g. the OpenRouter API key that week 8 introduces for the AI assistant feature must live outside the pushed tree (local-only config, environment variable, etc.), never hardcoded into a JS/HTML file. `.gitignore` already blocks `.env`, `*.key`, `*.pem`, service-account JSON files, and similar — but the gitignore only stops *untracked* files, so also never paste a live key directly into source that's already tracked.
+
+## Other notes
+
+- `docs/` holds checkpoint submission screenshots for the course, not project documentation.

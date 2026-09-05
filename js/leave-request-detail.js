@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 // js/leave-request-detail.js — หน้าที่ 3 รายละเอียดใบลา
-// สัปดาห์ที่ 6: อ่านใบลาและความเห็นจริงจาก Firestore
-// การกดอนุมัติ/ไม่อนุมัติ และเขียนความเห็น ยังเปลี่ยนแค่ในหน่วยความจำ
-// (บันทึกกลับลง Firestore จริงเป็นงานของสัปดาห์ที่ 7)
+// สัปดาห์ที่ 7: อ่านใบลาและความเห็นจริงจาก Firestore
+// กดอนุมัติ/ไม่อนุมัติ แก้เฉพาะช่อง status กลับลง Firestore จริง (updateDoc)
+// เขียนความเห็นยังเปลี่ยนแค่ในหน่วยความจำ (ของงานรอบถัดไป)
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
-import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
   var รหัสใบลา = ค่าจากURL("id");
@@ -21,11 +21,6 @@ import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/fireba
       ความเห็น = สแนปช็อตความเห็น.docs.map(function (d) {
         return Object.assign({ id: d.id }, d.data());
       });
-    } else {
-      // ไม่พบใน Firestore — อาจเป็นใบที่เพิ่งยื่นในหน้าก่อน ยังไม่บันทึกจริงจนกว่าจะถึงสัปดาห์ที่ 7
-      var ใบลาที่ยื่นใหม่ = JSON.parse(sessionStorage.getItem("ใบลาที่ยื่นใหม่") || "[]");
-      ใบ = ใบลาที่ยื่นใหม่.find(function (x) { return x.id === รหัสใบลา; });
-      ความเห็น = [];
     }
   } catch (err) {
     กล่องใบลา.innerHTML = "<p>⚠️ โหลดข้อมูลจาก Firestore ไม่สำเร็จ: " + esc(err.message) + "</p>";
@@ -60,12 +55,15 @@ import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/fireba
       return '<div class="field-row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
     }).join("");
 
-    // ปุ่มอนุมัติ / ไม่อนุมัติ ขึ้นเฉพาะใบที่ยังรอพิจารณา
+    // ปุ่มอนุมัติ / ไม่อนุมัติ / ลบ ขึ้นเฉพาะใบที่ยังรอพิจารณา (US-07: ลบใบลาได้เฉพาะใบที่สถานะยังเป็นรอพิจารณา)
     if (ใบ.status === "รอพิจารณา") {
       html +=
         '<div class="btn-row">' +
         '<button type="button" class="btn-ok" id="ปุ่มอนุมัติ">อนุมัติ</button>' +
         '<button type="button" class="btn-danger" id="ปุ่มไม่อนุมัติ">ไม่อนุมัติ</button>' +
+        "</div>" +
+        '<div class="btn-row">' +
+        '<button type="button" class="btn-danger" id="ปุ่มลบใบลา">ลบใบลา</button>' +
         "</div>";
     } else {
       html += '<p class="hint">ใบนี้พิจารณาแล้ว จึงเปลี่ยนสถานะต่อไม่ได้</p>';
@@ -76,18 +74,48 @@ import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/fireba
     if (ใบ.status === "รอพิจารณา") {
       document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
       document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
+      document.getElementById("ปุ่มลบใบลา").addEventListener("click", ลบใบลา);
     }
   }
 
-  // ── เปลี่ยนสถานะ (สัปดาห์นี้เปลี่ยนแค่ในหน่วยความจำ) ──
-  function เปลี่ยนสถานะ(สถานะใหม่) {
+  // ── เปลี่ยนสถานะ — เขียนกลับ Firestore จริง แก้เฉพาะช่อง status เท่านั้น ──
+  async function เปลี่ยนสถานะ(สถานะใหม่) {
     // กฎ: จะไม่อนุมัติได้ ต้องมีความเห็นอย่างน้อย 1 รายการก่อน
     if (สถานะใหม่ === "ไม่อนุมัติ" && ความเห็น.length === 0) {
       alert("ต้องเขียนความเห็นอย่างน้อย 1 รายการก่อน จึงจะกดไม่อนุมัติได้");
       return;
     }
-    ใบ.status = สถานะใหม่;   // แก้เฉพาะช่อง status เท่านั้น
-    วาดใบลา();
+
+    var ปุ่มอนุมัติ = document.getElementById("ปุ่มอนุมัติ");
+    var ปุ่มไม่อนุมัติ = document.getElementById("ปุ่มไม่อนุมัติ");
+    if (ปุ่มอนุมัติ) ปุ่มอนุมัติ.disabled = true;
+    if (ปุ่มไม่อนุมัติ) ปุ่มไม่อนุมัติ.disabled = true;
+
+    try {
+      await updateDoc(doc(db, "leaveRequests", รหัสใบลา), { status: สถานะใหม่ });
+      ใบ.status = สถานะใหม่;   // แก้เฉพาะช่อง status เท่านั้น
+      วาดใบลา();
+    } catch (err) {
+      alert("บันทึกสถานะลง Firestore ไม่สำเร็จ: " + err.message);
+      if (ปุ่มอนุมัติ) ปุ่มอนุมัติ.disabled = false;
+      if (ปุ่มไม่อนุมัติ) ปุ่มไม่อนุมัติ.disabled = false;
+    }
+  }
+
+  // ── ลบใบลา — ต้องยืนยันก่อนเสมอ กด Cancel แล้วต้องไม่ลบ ──
+  async function ลบใบลา() {
+    if (!confirm("ยืนยันการลบใบลานี้หรือไม่ — ลบแล้วกู้คืนไม่ได้")) return;
+
+    var ปุ่มลบ = document.getElementById("ปุ่มลบใบลา");
+    if (ปุ่มลบ) ปุ่มลบ.disabled = true;
+
+    try {
+      await deleteDoc(doc(db, "leaveRequests", รหัสใบลา));
+      location.href = "leave-requests.html";
+    } catch (err) {
+      alert("ลบไม่สำเร็จ: " + err.message);
+      if (ปุ่มลบ) ปุ่มลบ.disabled = false;
+    }
   }
 
   // ── รายการความเห็น เรียงจากเก่าไปใหม่ ──
