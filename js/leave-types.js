@@ -3,12 +3,25 @@
 // สัปดาห์ที่ 7: เพิ่ม แก้ ลบ ลง Firestore จริง (collection leaveTypes)
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
+import { requireLogin } from "./auth-guard.js";
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
+  var ผู้ล็อกอิน = await requireLogin();
+
   var ที่วางตาราง = document.getElementById("ตารางประเภท");
   var ช่องชื่อใหม่ = document.getElementById("ชื่อประเภทใหม่");
   var กล่องเตือน = document.getElementById("เตือนประเภท");
+
+  // ตาม ACL.md — จัดการประเภทการลาเป็นสิทธิ์ของฝ่ายบุคคล (hr) เท่านั้น
+  if (ผู้ล็อกอิน.role !== "hr") {
+    document.querySelectorAll(".container .card").forEach(function (การ์ด) { การ์ด.remove(); });
+    var กล่องไม่มีสิทธิ์ = document.createElement("div");
+    กล่องไม่มีสิทธิ์.className = "alert alert-error";
+    กล่องไม่มีสิทธิ์.textContent = "⚠️ หน้านี้สำหรับฝ่ายบุคคลเท่านั้น";
+    document.querySelector(".container").appendChild(กล่องไม่มีสิทธิ์);
+    return;
+  }
 
   var รายการ = [];
   try {

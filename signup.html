@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>สมัครสมาชิก · LeaveEasy</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/util.js" defer></script>
+  <script type="module" src="js/signup.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 LeaveEasy</h1>
+    <p class="subtitle">สมัครสมาชิกใหม่ด้วยอีเมลและรหัสผ่าน</p>
+
+    <div class="card">
+      <div id="ข้อความเตือน" class="alert alert-error hidden"></div>
+
+      <form id="ฟอร์มสมัครสมาชิก">
+        <label for="name">ชื่อ-นามสกุล</label>
+        <input type="text" id="name" placeholder="เช่น สมชาย ใจดี">
+
+        <label for="email">อีเมล</label>
+        <input type="email" id="email" placeholder="you@example.com">
+
+        <label for="password">รหัสผ่าน</label>
+        <input type="password" id="password" placeholder="อย่างน้อย 6 ตัวอักษร">
+
+        <label for="confirmPassword">ยืนยันรหัสผ่าน</label>
+        <input type="password" id="confirmPassword" placeholder="พิมพ์รหัสผ่านซ้ำอีกครั้ง">
+
+        <div class="btn-row">
+          <button type="submit" id="ปุ่มสมัครสมาชิก">สมัครสมาชิก</button>
+        </div>
+      </form>
+
+      <p class="hint">มีบัญชีแล้ว? <a href="login.html">เข้าสู่ระบบ</a></p>
+    </div>
+  </div>
+</body>
+</html>

@@ -5,9 +5,12 @@
 // เขียนความเห็นยังเปลี่ยนแค่ในหน่วยความจำ (ของงานรอบถัดไป)
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
+import { requireLogin } from "./auth-guard.js";
 import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
+  var ผู้ล็อกอิน = await requireLogin();
+
   var รหัสใบลา = ค่าจากURL("id");
   var กล่องใบลา = document.getElementById("กล่องใบลา");
   var กล่องความเห็น = document.getElementById("กล่องความเห็น");
@@ -27,7 +30,9 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
     return;
   }
 
-  if (!ใบ) {
+  // ตาม ACL.md — พนักงานเปิดดูใบลาของคนอื่นไม่ได้ ตอบเหมือน "ไม่พบใบลา" เพื่อไม่ยืนยันว่ามีใบนี้อยู่จริง
+  var ไม่พบหรือไม่มีสิทธิ์ = !ใบ || (ผู้ล็อกอิน.role === "employee" && ใบ.requesterId !== ผู้ล็อกอิน.uid);
+  if (ไม่พบหรือไม่มีสิทธิ์) {
     กล่องใบลา.innerHTML = "<p>ไม่พบใบขอลาที่ต้องการ — อาจถูกลบไปแล้ว หรือลิงก์ไม่ถูกต้อง</p>";
     return;
   }
@@ -55,16 +60,26 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
       return '<div class="field-row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
     }).join("");
 
+    // ตาม ACL.md — อนุมัติ/ไม่อนุมัติ เฉพาะหัวหน้ากับฝ่ายบุคคล · ลบได้เฉพาะเจ้าของใบ หรือฝ่ายบุคคล
+    var เป็นเจ้าของใบ = ใบ.requesterId === ผู้ล็อกอิน.uid;
+    var แสดงปุ่มอนุมัติ = ผู้ล็อกอิน.role === "manager" || ผู้ล็อกอิน.role === "hr";
+    var แสดงปุ่มลบ = เป็นเจ้าของใบ || ผู้ล็อกอิน.role === "hr";
+
     // ปุ่มอนุมัติ / ไม่อนุมัติ / ลบ ขึ้นเฉพาะใบที่ยังรอพิจารณา (US-07: ลบใบลาได้เฉพาะใบที่สถานะยังเป็นรอพิจารณา)
     if (ใบ.status === "รอพิจารณา") {
-      html +=
-        '<div class="btn-row">' +
-        '<button type="button" class="btn-ok" id="ปุ่มอนุมัติ">อนุมัติ</button>' +
-        '<button type="button" class="btn-danger" id="ปุ่มไม่อนุมัติ">ไม่อนุมัติ</button>' +
-        "</div>" +
-        '<div class="btn-row">' +
-        '<button type="button" class="btn-danger" id="ปุ่มลบใบลา">ลบใบลา</button>' +
-        "</div>";
+      if (แสดงปุ่มอนุมัติ) {
+        html +=
+          '<div class="btn-row">' +
+          '<button type="button" class="btn-ok" id="ปุ่มอนุมัติ">อนุมัติ</button>' +
+          '<button type="button" class="btn-danger" id="ปุ่มไม่อนุมัติ">ไม่อนุมัติ</button>' +
+          "</div>";
+      }
+      if (แสดงปุ่มลบ) {
+        html +=
+          '<div class="btn-row">' +
+          '<button type="button" class="btn-danger" id="ปุ่มลบใบลา">ลบใบลา</button>' +
+          "</div>";
+      }
     } else {
       html += '<p class="hint">ใบนี้พิจารณาแล้ว จึงเปลี่ยนสถานะต่อไม่ได้</p>';
     }
@@ -72,9 +87,13 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
     กล่องใบลา.innerHTML = html;
 
     if (ใบ.status === "รอพิจารณา") {
-      document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
-      document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
-      document.getElementById("ปุ่มลบใบลา").addEventListener("click", ลบใบลา);
+      if (แสดงปุ่มอนุมัติ) {
+        document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
+        document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
+      }
+      if (แสดงปุ่มลบ) {
+        document.getElementById("ปุ่มลบใบลา").addEventListener("click", ลบใบลา);
+      }
     }
   }
 
@@ -147,11 +166,10 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
     }
     เตือน.classList.add("hidden");
 
-    // สัปดาห์ที่ 6 ยังไม่มีล็อกอิน จึงสมมติว่าผู้เขียนคือ สมหญิง รักงาน
     ความเห็น.push({
       id: "ap-ใหม่-" + Date.now(),
       requestId: ใบ.id,
-      authorId: "u002", authorName: "สมหญิง รักงาน",
+      authorId: ผู้ล็อกอิน.uid, authorName: ผู้ล็อกอิน.name,
       message: ข้อความ,
       createdAt: เวลาตอนนี้()
     });

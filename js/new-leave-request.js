@@ -3,9 +3,12 @@
 // สัปดาห์ที่ 7: บันทึกใบลาใหม่ลง Firestore จริง
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
+import { requireLogin } from "./auth-guard.js";
 import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
+  var ผู้ล็อกอิน = await requireLogin();
+
   var ฟอร์ม = document.getElementById("ฟอร์มใบลา");
   var ช่องประเภท = document.getElementById("leaveTypeId");
   var กล่องเตือน = document.getElementById("ข้อความเตือน");
@@ -53,12 +56,11 @@ import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/
 
     var ประเภท = ประเภททั้งหมด.find(function (t) { return t.id === ค่า.leaveTypeId; });
 
-    // สัปดาห์ที่ 7 ยังไม่มีล็อกอิน จึงสมมติว่าผู้ขอลาคือ สมชาย ใจดี
     var ใบใหม่ = {
       title: ค่า.title,
       reason: ค่า.reason,
       status: "รอพิจารณา",                       // ใบใหม่เริ่มที่ รอพิจารณา เสมอ
-      requesterId: "u001", requesterName: "สมชาย ใจดี",
+      requesterId: ผู้ล็อกอิน.uid, requesterName: ผู้ล็อกอิน.name,
       approverId: "",      approverName: "",
       leaveTypeId: ประเภท.id, leaveTypeName: ประเภท.name,
       startDate: ค่า.startDate,

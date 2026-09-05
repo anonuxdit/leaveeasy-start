@@ -3,14 +3,22 @@
 // สัปดาห์ที่ 6: อ่านใบลาจริงจาก Firestore (collection leaveRequests)
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { requireLogin } from "./auth-guard.js";
+import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
+  var ผู้ล็อกอิน = await requireLogin();
+
   var กล่อง = document.getElementById("ผลลัพธ์");
+
+  // ตาม ACL.md — พนักงานเห็นเฉพาะใบลาของตัวเอง หัวหน้า/ฝ่ายบุคคลเห็นทุกใบ
+  var แหล่งข้อมูล = ผู้ล็อกอิน.role === "employee"
+    ? query(collection(db, "leaveRequests"), where("requesterId", "==", ผู้ล็อกอิน.uid))
+    : collection(db, "leaveRequests");
 
   var ใบลาจากฐานข้อมูล;
   try {
-    var สแนปช็อต = await getDocs(collection(db, "leaveRequests"));
+    var สแนปช็อต = await getDocs(แหล่งข้อมูล);
     ใบลาจากฐานข้อมูล = สแนปช็อต.docs.map(function (d) {
       return Object.assign({ id: d.id }, d.data());
     });
