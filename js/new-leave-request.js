@@ -11,8 +11,12 @@ import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/
 
   var ฟอร์ม = document.getElementById("ฟอร์มใบลา");
   var ช่องประเภท = document.getElementById("leaveTypeId");
+  var ช่องเหตุผล = document.getElementById("reason");
   var กล่องเตือน = document.getElementById("ข้อความเตือน");
   var ปุ่มบันทึก = document.getElementById("ปุ่มบันทึก");
+  var ปุ่มAI = document.getElementById("ปุ่มAI");
+  var ป้ายAI = document.getElementById("ป้ายAI");
+  var คำเตือนAI = document.getElementById("คำเตือนAI");
 
   var ประเภททั้งหมด = [];
   try {
@@ -81,5 +85,98 @@ import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/
   function เตือน(ข้อความ) {
     กล่องเตือน.textContent = "⚠️ " + ข้อความ;
     กล่องเตือน.classList.remove("hidden");
+  }
+
+  ปุ่มAI.addEventListener("click", async function () {
+    ป้ายAI.classList.add("hidden");
+    คำเตือนAI.classList.add("hidden");
+
+    var เหตุผล = ช่องเหตุผล.value.trim();
+    if (!เหตุผล) {
+      เตือนAI("กรอกเหตุผลการลาก่อน จึงให้ AI ช่วยจัดประเภทได้");
+      return;
+    }
+
+    var คีย์ = window.OPENROUTER_API_KEY || localStorage.getItem("openrouterApiKey");
+    if (!คีย์) {
+      เตือนAI("ยังไม่ได้ตั้งค่า OpenRouter API Key — ใส่ในไฟล์ js/ai-config.local.js (เครื่องนี้เท่านั้น) หรือกรอกที่หน้า ai-test.html ก่อน");
+      return;
+    }
+
+    ปุ่มAI.disabled = true;
+    ปุ่มAI.textContent = "กำลังจัดประเภท...";
+
+    var ตัวควบคุม = new AbortController();
+    var หมดเวลา = setTimeout(function () { ตัวควบคุม.abort(); }, 15000);
+
+    try {
+      var รายชื่อประเภท = ประเภททั้งหมด.map(function (t) {
+        return { id: t.id, name: t.name };
+      });
+
+      var ผลลัพธ์ = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        signal: ตัวควบคุม.signal,
+        headers: {
+          "Authorization": "Bearer " + คีย์,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-lite",
+          messages: [
+            {
+              role: "system",
+              content: "คุณคือผู้ช่วยจัดประเภทการลา ตอบกลับเป็น JSON เท่านั้น รูปแบบ {\"leaveTypeId\": \"<id ที่ให้ไปเท่านั้น>\"} หรือ {\"leaveTypeId\": null} ถ้าไม่มีประเภทไหนตรง ห้ามตอบอย่างอื่นนอกเหนือจาก JSON นี้"
+            },
+            {
+              role: "user",
+              content: "เหตุผลการลา: " + เหตุผล + "\n\nประเภทการลาที่มีอยู่จริง: " + JSON.stringify(รายชื่อประเภท)
+            }
+          ]
+        })
+      });
+
+      var ข้อมูล = await ผลลัพธ์.json();
+      if (!ผลลัพธ์.ok) {
+        throw new Error((ข้อมูล.error && ข้อมูล.error.message) || String(ผลลัพธ์.status));
+      }
+
+      var เนื้อหา = ข้อมูล.choices && ข้อมูล.choices[0] && ข้อมูล.choices[0].message
+        ? ข้อมูล.choices[0].message.content
+        : "";
+      เนื้อหา = เนื้อหา.replace(/```json|```/g, "").trim();
+
+      var แยกวิเคราะห์;
+      try {
+        แยกวิเคราะห์ = JSON.parse(เนื้อหา);
+      } catch (parseErr) {
+        แยกวิเคราะห์ = null;
+      }
+
+      var ประเภทที่ตรง = แยกวิเคราะห์ && แยกวิเคราะห์.leaveTypeId
+        ? ประเภททั้งหมด.find(function (t) { return t.id === แยกวิเคราะห์.leaveTypeId; })
+        : null;
+
+      if (ประเภทที่ตรง) {
+        ช่องประเภท.value = ประเภทที่ตรง.id;
+        ป้ายAI.classList.remove("hidden");
+      } else {
+        เตือนAI("จัดประเภทให้ไม่ได้ — โปรดเลือกประเภทการลาเอง");
+      }
+    } catch (err) {
+      var ข้อความ = err.name === "AbortError"
+        ? "เรียก AI ไม่สำเร็จ: ใช้เวลานานเกิน 15 วินาที"
+        : "เรียก AI ไม่สำเร็จ: " + err.message;
+      เตือนAI(ข้อความ);
+    } finally {
+      clearTimeout(หมดเวลา);
+      ปุ่มAI.disabled = false;
+      ปุ่มAI.textContent = "ให้ AI ช่วยจัดประเภทการลา";
+    }
+  });
+
+  function เตือนAI(ข้อความ) {
+    คำเตือนAI.textContent = "⚠️ " + ข้อความ;
+    คำเตือนAI.classList.remove("hidden");
   }
 })();

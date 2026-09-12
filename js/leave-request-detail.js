@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { db } from "./firebase-init.js";
 import { requireLogin } from "./auth-guard.js";
-import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 (async function () {
   var ผู้ล็อกอิน = await requireLogin();
@@ -14,6 +14,12 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
   var รหัสใบลา = ค่าจากURL("id");
   var กล่องใบลา = document.getElementById("กล่องใบลา");
   var กล่องความเห็น = document.getElementById("กล่องความเห็น");
+
+  // ไม่มี id ต่อท้าย URL (เช่น เปิดหน้านี้ตรง ๆ โดยไม่ได้กดจากหน้ารายการ) — ไม่ต้องลอง query Firestore
+  if (!รหัสใบลา) {
+    กล่องใบลา.innerHTML = "<p>ไม่พบใบขอลาที่ต้องการ — อาจถูกลบไปแล้ว หรือลิงก์ไม่ถูกต้อง</p>";
+    return;
+  }
 
   var ใบ, ความเห็น;
   try {
@@ -65,6 +71,20 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
     var แสดงปุ่มอนุมัติ = ผู้ล็อกอิน.role === "manager" || ผู้ล็อกอิน.role === "hr";
     var แสดงปุ่มลบ = เป็นเจ้าของใบ || ผู้ล็อกอิน.role === "hr";
 
+    // สรุปใบลาโดย AI — ให้ผู้อนุมัติอ่านก่อนตัดสินใจ (สัปดาห์ที่ 8)
+    if (ใบ.aiSuggestion) {
+      html +=
+        '<div class="alert alert-ai">สรุปโดย AI — โปรดตรวจสอบก่อนตัดสินใจ<br>' + esc(ใบ.aiSuggestion) +
+        '<div class="hint">สรุปเมื่อ ' + esc(ใบ.aiSuggestionAt || "") + "</div></div>";
+    }
+    if (แสดงปุ่มอนุมัติ && ใบ.status === "รอพิจารณา") {
+      html +=
+        '<div class="btn-row">' +
+        '<button type="button" id="ปุ่มสรุปAI">' + (ใบ.aiSuggestion ? "สรุปใหม่อีกครั้ง" : "ให้ AI ช่วยสรุปใบลา") + "</button>" +
+        "</div>" +
+        '<div id="คำเตือนสรุปAI" class="alert alert-warn hidden"></div>';
+    }
+
     // ปุ่มอนุมัติ / ไม่อนุมัติ / ลบ ขึ้นเฉพาะใบที่ยังรอพิจารณา (US-07: ลบใบลาได้เฉพาะใบที่สถานะยังเป็นรอพิจารณา)
     if (ใบ.status === "รอพิจารณา") {
       if (แสดงปุ่มอนุมัติ) {
@@ -90,9 +110,123 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
       if (แสดงปุ่มอนุมัติ) {
         document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
         document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
+        document.getElementById("ปุ่มสรุปAI").addEventListener("click", สรุปด้วยAI);
       }
       if (แสดงปุ่มลบ) {
         document.getElementById("ปุ่มลบใบลา").addEventListener("click", ลบใบลา);
+      }
+    }
+  }
+
+  // ── ขั้นที่ 1: อ่านใบลานี้ (ใช้ ใบ ที่โหลดไว้แล้ว) → ขั้นที่ 2: ให้ AI เขียนสรุปสั้น ๆ ──
+  async function สรุปด้วยAI() {
+    var ปุ่มสรุปAI = document.getElementById("ปุ่มสรุปAI");
+    var คำเตือนสรุปAI = document.getElementById("คำเตือนสรุปAI");
+    คำเตือนสรุปAI.classList.add("hidden");
+
+    var คีย์ = window.OPENROUTER_API_KEY || localStorage.getItem("openrouterApiKey");
+    if (!คีย์) {
+      เตือนสรุป("ยังไม่ได้ตั้งค่า OpenRouter API Key — ใส่ในไฟล์ js/ai-config.local.js (เครื่องนี้เท่านั้น) หรือกรอกที่หน้า ai-test.html ก่อน");
+      return;
+    }
+
+    ปุ่มสรุปAI.disabled = true;
+    ปุ่มสรุปAI.textContent = "กำลังสรุป...";
+
+    var ตัวควบคุม = new AbortController();
+    var หมดเวลา = setTimeout(function () { ตัวควบคุม.abort(); }, 15000);
+
+    var ข้อความที่ส่ง = "ช่วยสรุปใบลานี้ให้หัวหน้าอ่านก่อนพิจารณา:\n" +
+      "หัวข้อ: " + ใบ.title + "\n" +
+      "ประเภทการลา: " + ใบ.leaveTypeName + "\n" +
+      "วันที่ลา: " + ใบ.startDate + " ถึง " + ใบ.endDate + "\n" +
+      "ผู้ขอลา: " + ใบ.requesterName + "\n" +
+      "เหตุผล: " + ใบ.reason;
+
+    try {
+      var ผลลัพธ์ = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        signal: ตัวควบคุม.signal,
+        headers: {
+          "Authorization": "Bearer " + คีย์,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-lite",
+          messages: [
+            {
+              role: "system",
+              content: "คุณคือผู้ช่วยสรุปใบลาให้หัวหน้าอ่านก่อนตัดสินใจอนุมัติ ตอบเป็นข้อความภาษาไทยล้วน สั้น กระชับ 2-3 ประโยค ไม่ต้องใส่ JSON หรือ markdown"
+            },
+            {
+              role: "user",
+              content: ข้อความที่ส่ง
+            }
+          ]
+        })
+      });
+
+      var ข้อมูล = await ผลลัพธ์.json();
+      if (!ผลลัพธ์.ok) {
+        throw new Error((ข้อมูล.error && ข้อมูล.error.message) || String(ผลลัพธ์.status));
+      }
+
+      var สรุป = ข้อมูล.choices && ข้อมูล.choices[0] && ข้อมูล.choices[0].message
+        ? ข้อมูล.choices[0].message.content.trim()
+        : "";
+      if (!สรุป) {
+        await บันทึกaiLog(ข้อความที่ส่ง, "(ว่างเปล่า — AI ไม่ส่งข้อความสรุปกลับมา)");
+        เตือนสรุป("AI ไม่ส่งข้อความสรุปกลับมา");
+        return;
+      }
+
+      await บันทึกaiLog(ข้อความที่ส่ง, สรุป);
+
+      // ขั้นที่ 3: เขียนสรุปกลับลงฐาน
+      await บันทึกสรุปAI(สรุป);
+    } catch (err) {
+      var ข้อความ = err.name === "AbortError"
+        ? "สรุปไม่สำเร็จ: ใช้เวลานานเกิน 15 วินาที"
+        : "สรุปไม่สำเร็จ: " + err.message;
+      await บันทึกaiLog(ข้อความที่ส่ง, "(error) " + ข้อความ);
+      เตือนสรุป(ข้อความ);
+    } finally {
+      clearTimeout(หมดเวลา);
+      var ปุ่มที่ยังอยู่ = document.getElementById("ปุ่มสรุปAI");
+      if (ปุ่มที่ยังอยู่) {
+        ปุ่มที่ยังอยู่.disabled = false;
+        ปุ่มที่ยังอยู่.textContent = ใบ.aiSuggestion ? "สรุปใหม่อีกครั้ง" : "ให้ AI ช่วยสรุปใบลา";
+      }
+    }
+
+    function เตือนสรุป(ข้อความ) {
+      var กล่อง = document.getElementById("คำเตือนสรุปAI");
+      if (!กล่อง) return;
+      กล่อง.textContent = "⚠️ " + ข้อความ;
+      กล่อง.classList.remove("hidden");
+    }
+
+    // เขียนผลสรุปกลับ Firestore — แก้เฉพาะช่อง aiSuggestion / aiSuggestionAt เท่านั้น
+    // ⚠️ ห้ามแตะช่อง status เด็ดขาด — สถานะจริงของใบลาเปลี่ยนได้เฉพาะตอนคนกดปุ่ม
+    // อนุมัติ/ไม่อนุมัติ (ฟังก์ชัน เปลี่ยนสถานะ ด้านล่าง) เท่านั้น AI ห้ามเปลี่ยนสถานะเอง
+    async function บันทึกสรุปAI(ข้อความสรุป) {
+      var เวลาสรุป = เวลาตอนนี้();
+      await updateDoc(doc(db, "leaveRequests", รหัสใบลา), { aiSuggestion: ข้อความสรุป, aiSuggestionAt: เวลาสรุป });
+      ใบ.aiSuggestion = ข้อความสรุป;
+      ใบ.aiSuggestionAt = เวลาสรุป;
+      วาดใบลา();
+    }
+
+    // บันทึกทุกครั้งที่เรียก AI ไว้ในโฟลเดอร์ย่อย aiLog — ไม่ทำให้ฟีเจอร์หลักพังถ้าบันทึกไม่สำเร็จ
+    async function บันทึกaiLog(input, output) {
+      try {
+        await addDoc(collection(db, "leaveRequests", รหัสใบลา, "aiLog"), {
+          input: input,
+          output: output,
+          createdAt: เวลาตอนนี้()
+        });
+      } catch (logErr) {
+        console.warn("บันทึก aiLog ไม่สำเร็จ:", logErr.message);
       }
     }
   }
@@ -153,10 +287,11 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
       }).join("");
   }
 
-  // ── ส่งความเห็นใหม่ ──
-  function ส่งความเห็น() {
+  // ── ส่งความเห็นใหม่ — เขียนลง Firestore จริง ในโฟลเดอร์ย่อย approvals ของใบนี้ ──
+  async function ส่งความเห็น() {
     var ช่อง = document.getElementById("ข้อความความเห็น");
     var เตือน = document.getElementById("เตือนความเห็น");
+    var ปุ่มส่ง = document.getElementById("ปุ่มส่งความเห็น");
     var ข้อความ = ช่อง.value.trim();
 
     if (!ข้อความ) {
@@ -166,14 +301,23 @@ import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from "https://
     }
     เตือน.classList.add("hidden");
 
-    ความเห็น.push({
-      id: "ap-ใหม่-" + Date.now(),
-      requestId: ใบ.id,
-      authorId: ผู้ล็อกอิน.uid, authorName: ผู้ล็อกอิน.name,
-      message: ข้อความ,
-      createdAt: เวลาตอนนี้()
-    });
-    ช่อง.value = "";
-    วาดความเห็น();
+    ปุ่มส่ง.disabled = true;
+    try {
+      var ความเห็นใหม่ = {
+        authorId: ผู้ล็อกอิน.uid,
+        authorName: ผู้ล็อกอิน.name,
+        message: ข้อความ,
+        createdAt: เวลาตอนนี้()
+      };
+      var เอกสารใหม่ = await addDoc(collection(db, "leaveRequests", รหัสใบลา, "approvals"), ความเห็นใหม่);
+      ความเห็น.push(Object.assign({ id: เอกสารใหม่.id }, ความเห็นใหม่));
+      ช่อง.value = "";
+      วาดความเห็น();
+    } catch (err) {
+      เตือน.textContent = "⚠️ ส่งความเห็นไม่สำเร็จ: " + err.message;
+      เตือน.classList.remove("hidden");
+    } finally {
+      ปุ่มส่ง.disabled = false;
+    }
   }
 })();

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ทดสอบ OpenRouter AI · LeaveEasy</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/util.js" defer></script>
+  <script src="js/ai-config.local.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 ทดสอบ OpenRouter AI</h1>
+    <p class="subtitle">
+      หน้านี้เป็นหน้าทดสอบเฉพาะเครื่องคุณ ไม่ได้ผูกกับเมนูหลัก
+      คีย์ที่กรอกด้านล่างจะถูก<strong>เก็บไว้ใน localStorage ของเบราว์เซอร์นี้เท่านั้น</strong>
+      ไม่ถูกส่งไปที่ไหนนอกจาก OpenRouter โดยตรง และไม่มีทางเข้าไปอยู่ในไฟล์โค้ดหรือ Git
+    </p>
+
+    <div class="card">
+      <label for="apiKey">OpenRouter API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+      <p class="hint">⚠️ อย่าวางคีย์นี้ในแชทหรือที่สาธารณะอีก ถ้าเคยหลุดไปแล้วให้ไป revoke แล้วสร้างใหม่</p>
+
+      <div id="ข้อความเตือน" class="alert alert-error hidden"></div>
+
+      <div class="btn-row">
+        <button type="button" id="ปุ่มทดสอบ">ส่งข้อความ "สวัสดี"</button>
+      </div>
+
+      <div id="ผลลัพธ์" class="hidden" style="margin-top:16px;">
+        <p><strong>ส่งไป:</strong> สวัสดี</p>
+        <p><strong>โมเดล:</strong> google/gemini-2.5-flash-lite</p>
+        <div class="alert alert-ok" id="คำตอบ"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/ai-test.js"></script>
+</body>
+</html>

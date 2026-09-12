@@ -36,6 +36,7 @@ id_ed25519*
 credentials.json
 *credentials*.json
 config.local.json
+js/ai-config.local.js
 serviceAccountKey.json
 *serviceAccount*.json
 *firebase-adminsdk*.json
